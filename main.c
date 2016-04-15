@@ -3,31 +3,28 @@
 #include <signal.h>
 #include "list/list.h"
 
-#if __STDC_VERSION__ >= 199901L
-#define _XOPEN_SOURCE 600
-#else
-#define _XOPEN_SOURCE 500
-#endif /* __STDC_VERSION__ */
+/*#if __STDC_VERSION__ >= 199901L*/
+/*#define _XOPEN_SOURCE 600*/
+/*#else*/
+/*#define _XOPEN_SOURCE 500*/
+/*#endif [> __STDC_VERSION__ <]*/
 #include <time.h>
 #include <unistd.h>
 
 static void finish(int sig);
+static void handleInput();
 
-struct Point {
+typedef struct {
   int x;
   int y;
-};
+} vector2;
 
-struct SnakeCell {
-  struct Point pos;
-  struct SnakeCell *next;
-};
-
-struct Snake {
-  struct Point snake[20];
-  int start;
-  int end;
-};
+vector2 * vector2_new(int x, int y) {
+  vector2 * self = malloc(sizeof(vector2));
+  self->x = x;
+  self->y = y;
+  return self;
+}
 
 const int KEY_ESC = 27;
 
@@ -38,54 +35,67 @@ void cap(int *x, int *y, int w, int h) {
   if (*y >= h) *y = h - 1;
 }
 
-void drawBlock(struct Point block) {
-  mvwaddch(stdscr, block.y, block.x, ACS_BLOCK);
-  mvwaddch(stdscr, block.y, block.x+1, ACS_BLOCK);
+void drawBlock(vector2 *block) {
+  attron(COLOR_PAIR(1));
+  mvwaddch(stdscr, block->y, block->x, ' ');
+  mvwaddch(stdscr, block->y, block->x+1, ' ');
+  attroff(COLOR_PAIR(1));
 }
-void drawSnake(struct Point snake[], int ln) {
-  for (int i=0; i < ln; i+=1) {
-    drawBlock(snake[i]);
+
+void drawSnake(list_t *snake) {
+  list_node_t *node;
+  list_iterator_t *it = list_iterator_new(snake, LIST_HEAD);
+
+  while ((node = list_iterator_next(it))) {
+    drawBlock(node->val);
   }
-}
-void moveSnake(struct Point snake[], int ln, struct Point to) {
-
+  list_iterator_destroy(it);
 }
 
-int
-main(int argc, char *argv[]) {
-  int i;
-  int x = 0;
-  int y = 0;
+void moveSnake(list_t *snake, int x, int y) {
+  list_node_t * n = list_rpop(snake);
+  list_lpush(snake, n);
+  ((vector2 *) snake->head->val)->x = x;
+  ((vector2 *) snake->head->val)->y = y;
+}
 
-  struct Point snake[20];
-  /*struct Snake sn;*/
-  /*for (i=0; i<20; i+=1) {*/
-    /*sn.snake[i].x = i;*/
-    /*sn.snake[i].y = 0;*/
-  /*}*/
-  /*sn.start = 0;*/
-  /*sn.end = 1;*/
+int screenw;
+int screenh;
 
-  //int snakeln = 9;
-  for (i=0; i<20; i+=1) {
-    snake[i].x = i;
-    snake[i].y = 0;
+list_t *snake;
+
+struct timespec t;
+static void wait() {
+  t.tv_sec = 0;
+  t.tv_nsec = 50000000L;
+  nanosleep(&t, NULL);
+}
+
+int directionX = 0;
+int directionY = 1;
+
+int main(int argc, char **argv) {
+  int x = 3;
+  int y = 3;
+
+  snake = list_new();
+  snake->free = free;
+
+  /*list_node_t *head =*/
+  for (int i = 0; i < 60; i+=1) {
+    list_rpush(snake, list_node_new(vector2_new(x+i*2,y)));
   }
 
+  signal(SIGINT, finish);
 
-  int directionX = 1;
-  int directionY = 0;
-
-  (void) signal(SIGINT, finish);
-  (void) initscr();
+  initscr();
   keypad(stdscr, TRUE);
-  (void) nonl();
-  (void) cbreak();
-  (void) noecho();
+  nonl();
+  cbreak();
+  noecho();
   start_color();
-  
-  int screenw;
-  int screenh;
+  init_pair(1, COLOR_RED, COLOR_WHITE);
+
   getmaxyx(stdscr, screenh, screenw);
 
   //hide cursor
@@ -93,34 +103,37 @@ main(int argc, char *argv[]) {
 
   nodelay(stdscr, true);
 
-  mvwaddch(stdscr, y, x, 'X');
-
-  struct timespec t;
   for (;;) {
-    t.tv_sec = 0;
-    t.tv_nsec = 50000000L;
-    nanosleep(&t, NULL);
-    int ch = getch();
-    if (ch != ERR) {
-      if (ch == KEY_ESC) break;
-      directionX = (ch == KEY_RIGHT) - (ch == KEY_LEFT);
-      directionY = (ch == KEY_DOWN) - (ch == KEY_UP);
-    }
+    wait();
+    handleInput();
     x += directionX*2;
     y += directionY;
     cap(&x, &y, screenw, screenh);
 
+    moveSnake(snake, x, y);
     erase();
-    mvwaddch(stdscr, y, x, ACS_BLOCK);
-    mvwaddch(stdscr, y, x+1, ACS_BLOCK);
-    //drawSnake(sn, snakeln);
+    drawSnake(snake);
     refresh();
   }
 
   finish(0);
 }
 
+static void handleInput() {
+  int ch = getch();
+  if (ch != ERR) {
+    if (ch == KEY_ESC) finish(0);
+    int up = (ch == KEY_RIGHT) - (ch == KEY_LEFT);
+    int down = (ch == KEY_DOWN) - (ch == KEY_UP);
+    if (up || down) {
+      directionX = up;
+      directionY = down;
+    }
+  }
+}
+
 static void finish(int sig) {
+  list_destroy(snake);
   endwin();
   exit(0);
 }
