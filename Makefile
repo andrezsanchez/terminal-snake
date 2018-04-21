@@ -1,4 +1,4 @@
-CC = colorgcc
+CC = gcc
 
 LDFLAGS = -lncurses
 CFLAGS = -std=gnu99 -Wall -Ideps
