@@ -1,71 +1,57 @@
 #include <stdlib.h>
 #include <curses.h>
 #include <signal.h>
-#include "list/list.h"
-
 #include <time.h>
 #include <unistd.h>
+#include <stdbool.h>
+#include "list/list.h"
+#include "vec.h"
 
 static void finish(int sig);
 static void screenSizeChange();
-static void handleInput();
-
-typedef struct {
-  int x;
-  int y;
-} vector2;
-
-vector2 * vector2_new(int x, int y) {
-  vector2 * self = malloc(sizeof(vector2));
-  self->x = x;
-  self->y = y;
-  return self;
-}
 
 const int KEY_ESC = 27;
 
-void cap(int *x, int *y, int w, int h) {
-  if (*x < 0) *x = 0;
-  if (*x >= w) *x = w - 1;
-  if (*y < 0) *y = 0;
-  if (*y >= h) *y = h - 1;
-}
-
-bool inBounds(int x, int y, int w, int h) {
-  if (x < 0) return false;
-  if (x >= w) return false;
-  if (y < 0) return false;
-  if (y >= h) return false;
+bool in_bounds(const vec2i position, const vec2i screen_size) {
+  if (position.x < 0) return false;
+  if (position.x >= screen_size.x) return false;
+  if (position.y < 0) return false;
+  if (position.y >= screen_size.y) return false;
   return true;
 }
 
-void drawBlock(vector2 *block, int color) {
+void draw_block(vec2i * block, int color) {
   attron(COLOR_PAIR(color));
-  mvwaddch(stdscr, block->y, block->x, ' ');
-  mvwaddch(stdscr, block->y, block->x+1, ' ');
+  mvwaddch(stdscr, block->y, block->x * 2, ' ');
+  mvwaddch(stdscr, block->y, (block->x * 2) + 1, ' ');
   attroff(COLOR_PAIR(color));
 }
 
-void drawSnake(list_t *snake) {
-  list_node_t *node;
-  list_iterator_t *it = list_iterator_new(snake, LIST_HEAD);
-
-  while ((node = list_iterator_next(it))) {
-    drawBlock(node->val, 1);
+void draw_snake(list_t *snake) {
+  list_iterator_t * it;
+  
+  if (!(it = list_iterator_new(snake, LIST_HEAD))) {
+    return;
   }
+
+  list_node_t * node;
+  while ((node = list_iterator_next(it))) {
+    draw_block(node->val, 1);
+  }
+
   list_iterator_destroy(it);
 }
 
-bool blockSnakeCollision(int x, int y, list_t *snake) {
-  list_node_t *node;
-  list_iterator_t *it = list_iterator_new(snake, LIST_HEAD);
+bool block_snake_collision(vec2i position, list_t *snake) {
+  list_node_t * node;
+  list_iterator_t * it = list_iterator_new(snake, LIST_HEAD);
 
   bool collision = false;
 
-  vector2 * block;
+  vec2i * block;
   while ((node = list_iterator_next(it))) {
-    block = (vector2 *) node->val;
-    if (block->x == x && block->y == y) {
+    block = (vec2i *) node->val;
+    if (block->x == position.x && block->y == position.y) {
       collision = true;
       break;
     }
@@ -75,22 +61,25 @@ bool blockSnakeCollision(int x, int y, list_t *snake) {
   return collision;
 }
 
-bool moveSnake(list_t *snake, vector2 position) {
-  list_node_t * n = list_rpop(snake);
-
-  bool collision = blockSnakeCollision(position.x, position.y, snake);
-
-  list_lpush(snake, n);
-  ((vector2 *) snake->head->val)->x = position.x;
-  ((vector2 *) snake->head->val)->y = position.y;
-
-  return collision;
+void snake_add_head(list_t *snake, vec2i direction) {
+  vec2i * head = vec2i_clone((vec2i *) snake->head->val);
+  vec2i_add(head, *head, direction);
+  list_node_t * node = list_node_new(head);
+  list_lpush(snake, node);
 }
 
-int screenw;
-int screenh;
+void snake_remove_tail(list_t *snake) {
+  list_remove(snake, snake->tail);
+}
 
-/*list_t *snake = NULL;*/
+void snakeMove(list_t *snake, vec2i direction) {
+  snake_add_head(snake, direction);
+  snake_remove_tail(snake);
+}
+
+vec2i snake_head(list_t * snake) {
+  return *((vec2i *) snake->head->val);
+}
 
 struct timespec t;
 static void waitPlease() {
@@ -101,10 +90,10 @@ static void waitPlease() {
 
 typedef struct {
   list_t * snake;
-  vector2 position;
-  vector2 direction;
+  vec2i position;
+  vec2i direction;
   bool endScreen;
-  vector2 apple;
+  vec2i apple;
 } Game;
 
 void gameInit(Game *game) {
@@ -117,11 +106,11 @@ void gameInit(Game *game) {
   game->endScreen = false;
   game->apple.x = 10;
   game->apple.y = 10;
-  for (int i = 0; i < 30; i += 1) {
+  for (int i = 0; i < 5; i += 1) {
     list_rpush(
       game->snake,
       list_node_new(
-        vector2_new(game->position.x+i*2, game->position.y)
+        vec2i_new(game->position.x + i, game->position.y)
       )
     );
   }
@@ -134,85 +123,28 @@ void gameEnd(Game *game) {
   game->snake = NULL;
 }
 
-void gameApplyDirection(Game *game, vector2 direction) {
+void nextDirection(
+  vec2i * currentDirection,
+  const vec2i inputDirection
+) {
+  // Copy the direction under certain criteria.
   if (
-      !(game->direction.x == direction.x && game->direction.y == -direction.y) &&
-      !(game->direction.x == -direction.x && game->direction.y == direction.y) &&
-      !(direction.x == 0 && direction.y == 0)
-     ) {
-    game->direction = direction;
+    // Prevent a direction directly opposite the current direction.
+    !(currentDirection->x == inputDirection.x && currentDirection->y == -inputDirection.y) &&
+    !(currentDirection->x == -inputDirection.x && currentDirection->y == inputDirection.y) &&
+
+    // Don't use a 0 direction.
+    !(inputDirection.x == 0 && inputDirection.y == 0)
+   ) {
+    vec2i_copy(currentDirection, inputDirection);
   }
-  game->position.x += game->direction.x*2;
-  game->position.y += game->direction.y;
 }
 
-int main(int argc, char **argv) {
-  signal(SIGINT, finish);
-  signal(SIGWINCH, screenSizeChange);
-
-  initscr();
-  keypad(stdscr, TRUE);
-  nonl();
-  cbreak();
-  noecho();
-  start_color();
-  init_pair(1, COLOR_RED, COLOR_WHITE);
-  init_pair(2, COLOR_RED, COLOR_RED);
-
-  getmaxyx(stdscr, screenh, screenw);
-
-  //hide cursor
-  curs_set(0); 
-
-  nodelay(stdscr, true);
-
-  vector2 screen = (vector2) { .x = screenw, .y = screenh };
-  Game game;
-  gameInit(&game);
-
-  vector2 newDirection;
-  for (;;) {
-    waitPlease();
-    if (!game.endScreen) {
-      handleInput(&newDirection);
-      gameApplyDirection(&game, newDirection);
-
-      bool collision = moveSnake(game.snake, game.position);
-      if (collision || !inBounds(game.position.x, game.position.y, screenw, screenh)) {
-        game.endScreen = true;
-        gameEnd(&game);
-        continue;
-      }
-
-      /*cap(&x, &y, screenw, screenh);*/
-
-      erase();
-      drawSnake(game.snake);
-      drawBlock(&game.apple, 2);
-      /*mvwaddch(stdscr, 20, 20, '@');*/
-    }
-    else {
-      int ch = getch();
-      if (ch != ERR) {
-        if (ch == 'q') {
-          finish(0);
-        }
-        else {
-          gameEnd(&game);
-          gameInit(&game);
-        }
-      }
-
-      erase();
-      const int x = screenw / 2;
-      const int y = screenh / 2;
-      const char youLose[] = "You have failed you're prerogative as a snake. Shame be upon you and your children.";
-      mvwaddstr(stdscr, y, x - (sizeof(youLose) / 2), youLose);
-    }
-    refresh();
-  }
-
-  finish(0);
+void gameResetApple(Game *game) {
+  do {
+    game->apple.x = rand() % 30;
+    game->apple.y = rand() % 30;
+  } while (block_snake_collision(game->apple, game->snake));
 }
 
 bool right(int c) {
@@ -259,19 +191,95 @@ bool left(int c) {
   }
 }
 
-static void handleInput(vector2 *output) {
-  int ch = getch();
+vec2i getDirection(int ch) {
   if (ch != ERR) {
     if (ch == KEY_ESC) finish(0);
     int x = right(ch) - left(ch);
     int y = isDown(ch) - isUp(ch);
-    output->x = x;
-    output->y = y;
+    return (vec2i) { x, y };
   }
   else {
-    output->x = 0;
-    output->y = 0;
+    return (vec2i) { 0, 0 };
   }
+}
+
+const char youLose[] = "You have failed you're prerogative as a snake. Shame be upon you and your children.";
+
+int main(int argc, char **argv) {
+  signal(SIGINT, finish);
+  signal(SIGWINCH, screenSizeChange);
+
+  initscr();
+  keypad(stdscr, TRUE);
+  nonl();
+  cbreak();
+  noecho();
+  start_color();
+  init_pair(1, COLOR_RED, COLOR_WHITE);
+  init_pair(2, COLOR_RED, COLOR_RED);
+
+  vec2i screen;
+  getmaxyx(stdscr, screen.y, screen.x);
+
+  //hide cursor
+  curs_set(0); 
+
+  nodelay(stdscr, true);
+  Game game;
+  gameInit(&game);
+
+  for (;;) {
+    waitPlease();
+    if (!game.endScreen) {
+      nextDirection(
+        &game.direction,
+        getDirection(getch())
+      );
+      vec2i candidatePosition;
+      vec2i_add(&candidatePosition, game.position, game.direction);
+
+      bool collision = block_snake_collision(candidatePosition, game.snake);
+      if (collision || !in_bounds(candidatePosition, screen)) {
+        game.endScreen = true;
+        gameEnd(&game);
+        continue;
+      }
+
+      if (block_snake_collision(game.apple, game.snake)) {
+        snake_add_head(game.snake, game.direction);
+        game.position = snake_head(game.snake);
+        gameResetApple(&game);
+      }
+      else {
+        snakeMove(game.snake, game.direction);
+        game.position = snake_head(game.snake);
+      }
+
+      erase();
+      draw_snake(game.snake);
+      draw_block(&game.apple, 2);
+    }
+    else {
+      int ch = getch();
+      if (ch != ERR) {
+        if (ch == 'q') {
+          finish(0);
+        }
+        else {
+          gameEnd(&game);
+          gameInit(&game);
+        }
+      }
+
+      erase();
+      const int x = screen.x / 2;
+      const int y = screen.y / 2;
+      mvwaddstr(stdscr, y, x - (sizeof(youLose) / 2), youLose);
+    }
+    refresh();
+  }
+
+  finish(0);
 }
 
 static void finish(int sig) {

@@ -1,24 +1,24 @@
 CC = gcc
 
 LDFLAGS = -lncurses
-CFLAGS = -std=gnu99 -Wall -Ideps
+CFLAGS = -std=c18 -Wall -Ideps -g
 
-DEPS = $(wildcard deps/*/*.c)
-OBJS = $(DEPS:.c=.o)
+SRC = $(wildcard *.c) $(wildcard deps/*/*.c)
 
-SRC = main.c
+OBJS = $(SRC:.c=.o)
 
 BINS = main
 
 all: $(BINS)
+	@echo $(SRC)
 
-$(BINS): $(SRC) $(OBJS)
-	$(CC) $(CFLAGS) $@.c -o $@ $(OBJS) $(LDFLAGS)
+$(BINS): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 
 %.o: %.c
 	$(CC) $< -c -o $@ $(CFLAGS)
 
 clean:
-	rm $(BINS) $(OBJS)
+	rm -f $(BINS) $(OBJS)
 
 .PHONY: all clean
