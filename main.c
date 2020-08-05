@@ -4,7 +4,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include "list/list.h"
+#include "deps/list/list.h"
 #include "vec.h"
 
 static void finish(int sig);
@@ -207,14 +207,14 @@ const int GAME_SIZE = 30;
 void fill_background(const vec2i screen_size) {
   for (int y = 0; y < screen_size.y; ++y) {
     for (int x = 0; x < screen_size.x; ++x) {
-      if ((x > (GAME_SIZE * 2) - 1) || (y > GAME_SIZE)) {
+      if ((x >= (GAME_SIZE * 2)) || (y >= GAME_SIZE)) {
         mvwaddch(stdscr, y, x, '#');
       }
     }
   }
 }
 
-const char youLose[] = "You have failed you're prerogative as a snake. Shame be upon you and your children.";
+const char youLose[] = "You have failed your prerogative as a snake. Shame be upon you and your children.";
 
 int main(int argc, char **argv) {
   signal(SIGINT, finish);
