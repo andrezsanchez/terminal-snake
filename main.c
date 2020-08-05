@@ -72,7 +72,7 @@ void snake_remove_tail(list_t *snake) {
   list_remove(snake, snake->tail);
 }
 
-void snakeMove(list_t *snake, vec2i direction) {
+void snake_move(list_t *snake, vec2i direction) {
   snake_add_head(snake, direction);
   snake_remove_tail(snake);
 }
