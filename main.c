@@ -8,15 +8,15 @@
 #include "vec.h"
 
 static void finish(int sig);
-static void screenSizeChange();
+static void screen_size_changed();
 
 const int KEY_ESC = 27;
 
-bool in_bounds(const vec2i position, const vec2i screen_size) {
+bool in_bounds(const vec2i position, const vec2i bounds) {
   if (position.x < 0) return false;
-  if (position.x >= screen_size.x) return false;
+  if (position.x >= bounds.x) return false;
   if (position.y < 0) return false;
-  if (position.y >= screen_size.y) return false;
+  if (position.y >= bounds.y) return false;
   return true;
 }
 
@@ -82,7 +82,7 @@ vec2i snake_head(list_t * snake) {
 }
 
 struct timespec t;
-static void waitPlease() {
+static void wait_please() {
   t.tv_sec = 0;
   t.tv_nsec = 50000000L;
   nanosleep(&t, NULL);
@@ -96,9 +96,9 @@ typedef struct {
   vec2i apple;
 } Game;
 
-void gameInit(Game *game) {
-  game->position.x = 10 + rand() % 25;
-  game->position.y = 10 + rand() % 25;
+void game_init(Game *game) {
+  game->position.x = 15;
+  game->position.y = 15;
   game->direction.x = 0;
   game->direction.y = 1;
   game->snake = list_new();
@@ -116,14 +116,14 @@ void gameInit(Game *game) {
   }
 }
 
-void gameEnd(Game *game) {
+void game_end(Game *game) {
   if (game->snake != NULL) {
     list_destroy(game->snake);
   }
   game->snake = NULL;
 }
 
-void nextDirection(
+void next_direction(
   vec2i * currentDirection,
   const vec2i inputDirection
 ) {
@@ -140,7 +140,7 @@ void nextDirection(
   }
 }
 
-void gameResetApple(Game *game) {
+void game_reset_apple(Game *game) {
   do {
     game->apple.x = rand() % 30;
     game->apple.y = rand() % 30;
@@ -158,7 +158,7 @@ bool right(int c) {
   }
 }
 
-bool isUp(int c) {
+bool is_up(int c) {
   switch (c) {
     case 'k':
     case 'w':
@@ -169,7 +169,7 @@ bool isUp(int c) {
   }
 }
 
-bool isDown(int c) {
+bool is_down(int c) {
   switch (c) {
     case 'j':
     case 's':
@@ -191,11 +191,11 @@ bool left(int c) {
   }
 }
 
-vec2i getDirection(int ch) {
+vec2i get_direction(int ch) {
   if (ch != ERR) {
     if (ch == KEY_ESC) finish(0);
     int x = right(ch) - left(ch);
-    int y = isDown(ch) - isUp(ch);
+    int y = is_down(ch) - is_up(ch);
     return (vec2i) { x, y };
   }
   else {
@@ -203,11 +203,22 @@ vec2i getDirection(int ch) {
   }
 }
 
+const int GAME_SIZE = 30;
+void fill_background(const vec2i screen_size) {
+  for (int y = 0; y < screen_size.y; ++y) {
+    for (int x = 0; x < screen_size.x; ++x) {
+      if ((x > (GAME_SIZE * 2) - 1) || (y > GAME_SIZE)) {
+        mvwaddch(stdscr, y, x, '#');
+      }
+    }
+  }
+}
+
 const char youLose[] = "You have failed you're prerogative as a snake. Shame be upon you and your children.";
 
 int main(int argc, char **argv) {
   signal(SIGINT, finish);
-  signal(SIGWINCH, screenSizeChange);
+  signal(SIGWINCH, screen_size_changed);
 
   initscr();
   keypad(stdscr, TRUE);
@@ -218,6 +229,7 @@ int main(int argc, char **argv) {
   init_pair(1, COLOR_RED, COLOR_WHITE);
   init_pair(2, COLOR_RED, COLOR_RED);
 
+  vec2i game_dim = { .x = GAME_SIZE, .y = GAME_SIZE };
   vec2i screen;
   getmaxyx(stdscr, screen.y, screen.x);
 
@@ -226,36 +238,37 @@ int main(int argc, char **argv) {
 
   nodelay(stdscr, true);
   Game game;
-  gameInit(&game);
+  game_init(&game);
 
   for (;;) {
-    waitPlease();
+    wait_please();
     if (!game.endScreen) {
-      nextDirection(
+      next_direction(
         &game.direction,
-        getDirection(getch())
+        get_direction(getch())
       );
       vec2i candidatePosition;
       vec2i_add(&candidatePosition, game.position, game.direction);
 
       bool collision = block_snake_collision(candidatePosition, game.snake);
-      if (collision || !in_bounds(candidatePosition, screen)) {
+      if (collision || !in_bounds(candidatePosition, game_dim)) {
         game.endScreen = true;
-        gameEnd(&game);
+        game_end(&game);
         continue;
       }
 
       if (block_snake_collision(game.apple, game.snake)) {
         snake_add_head(game.snake, game.direction);
         game.position = snake_head(game.snake);
-        gameResetApple(&game);
+        game_reset_apple(&game);
       }
       else {
-        snakeMove(game.snake, game.direction);
+        snake_move(game.snake, game.direction);
         game.position = snake_head(game.snake);
       }
 
       erase();
+      fill_background(screen);
       draw_snake(game.snake);
       draw_block(&game.apple, 2);
     }
@@ -266,8 +279,8 @@ int main(int argc, char **argv) {
           finish(0);
         }
         else {
-          gameEnd(&game);
-          gameInit(&game);
+          game_end(&game);
+          game_init(&game);
         }
       }
 
@@ -283,10 +296,10 @@ int main(int argc, char **argv) {
 }
 
 static void finish(int sig) {
-  /*gameEnd();*/
+  /*game_end();*/
   endwin();
   exit(0);
 }
 
-static void screenSizeChange() {
+static void screen_size_changed() {
 }
