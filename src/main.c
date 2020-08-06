@@ -1,10 +1,11 @@
 #include <stdlib.h>
+#include <stdio.h>
 #include <curses.h>
 #include <signal.h>
 #include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
-#include "deps/list/list.h"
+#include "list/list.h"
 #include "vec.h"
 #include "game.h"
 #include "snake.h"
@@ -33,6 +34,9 @@ void draw_block(vec2i * block, const vec2i offset, const int color) {
 }
 
 void draw_snake(list_t * snake, const vec2i screen_size) {
+  if (!snake) {
+    return;
+  }
   list_iterator_t * it = {0};
   
   if (!(it = list_iterator_new(snake, LIST_HEAD))) {
@@ -126,6 +130,15 @@ void fill_background(const vec2i screen_size) {
   attroff(COLOR_PAIR(WALL_COLOR));
 }
 
+#define SCORE_MESSAGE_SIZE 30
+void draw_score(const game_t game) {
+  char message[SCORE_MESSAGE_SIZE] = {0};
+  snprintf(message, SCORE_MESSAGE_SIZE, "Score: %d", game.score);
+  attron(COLOR_PAIR(WALL_COLOR));
+  mvwaddstr(stdscr, 0, 0, message);
+  attroff(COLOR_PAIR(WALL_COLOR));
+}
+
 const char YOU_LOSE_STRING[] = "You have failed your prerogative as a snake. Shame be upon you and your children.";
 
 void draw_screen(game_t game, vec2i screen_size) {
@@ -142,6 +155,8 @@ void draw_screen(game_t game, vec2i screen_size) {
   else {
     // Fill the out-of-bounds part of the screen.
     fill_background(screen_size);
+
+    draw_score(game);
 
     // Draw the snake.
     draw_snake(game.snake, screen_size);
@@ -165,7 +180,7 @@ void init_ncurses() {
 
   // Initialize ncurses colors.
   start_color();
-  init_pair(WALL_COLOR, COLOR_RED, COLOR_WHITE);
+  init_pair(WALL_COLOR, COLOR_BLACK, COLOR_WHITE);
   init_pair(APPLE_COLOR, COLOR_RED, COLOR_RED);
   init_pair(SNAKE_COLOR, COLOR_YELLOW, COLOR_YELLOW);
 }

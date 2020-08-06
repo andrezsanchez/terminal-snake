@@ -1,5 +1,5 @@
 #include <stdbool.h>
-#include "deps/list/list.h"
+#include "list/list.h"
 #include "vec.h"
 #include "snake.h"
 
@@ -12,6 +12,7 @@ typedef struct {
   vec2i direction;
   bool end_screen;
   vec2i apple;
+  int score;
 } game_t;
 
 void game_init(game_t * game);

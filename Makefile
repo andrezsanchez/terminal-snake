@@ -3,7 +3,7 @@ CC = clang
 LDFLAGS = -lncurses
 CFLAGS = -std=c18 -Wall -Ideps -g
 
-SRC = $(wildcard *.c) $(wildcard deps/*/*.c)
+SRC = $(wildcard src/*.c) $(wildcard deps/*/*.c)
 
 OBJS = $(SRC:.c=.o)
 

@@ -1,4 +1,4 @@
-#include "deps/list/list.h"
+#include "list/list.h"
 #include "vec.h"
 
 void snake_add_head(list_t *snake, vec2i direction);

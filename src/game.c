@@ -32,7 +32,6 @@ void game_end(game_t * game) {
   }
 
   game->end_screen = true;
-  game_destroy(game);
 }
 
 void game_destroy(game_t * game) {
@@ -43,7 +42,8 @@ void game_destroy(game_t * game) {
   if (game->snake != NULL) {
     list_destroy(game->snake);
   }
-  game->snake = NULL;
+
+  *game = (game_t) {0};
 }
 
 void game_reset_apple(game_t * game) {
@@ -107,6 +107,7 @@ void game_apply_direction(game_t * game, vec2i direction) {
     snake_add_head(game->snake, game->direction);
     game->position = snake_head(game->snake);
     game_reset_apple(game);
+    game->score += 1;
   }
   // If the snake has not, move normally.
   else {
