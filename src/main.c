@@ -135,7 +135,7 @@ void draw_score(const game_t game) {
   char message[SCORE_MESSAGE_SIZE] = {0};
   snprintf(message, SCORE_MESSAGE_SIZE, "Score: %d", game.score);
   attron(COLOR_PAIR(WALL_COLOR));
-  mvwaddstr(stdscr, 0, 0, message);
+  mvwaddstr(stdscr, 1, 1, message);
   attroff(COLOR_PAIR(WALL_COLOR));
 }
 
