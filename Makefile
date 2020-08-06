@@ -1,4 +1,4 @@
-CC = gcc
+CC = clang
 
 LDFLAGS = -lncurses
 CFLAGS = -std=c18 -Wall -Ideps -g
