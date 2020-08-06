@@ -10,7 +10,6 @@ OBJS = $(SRC:.c=.o)
 BINS = main
 
 all: $(BINS)
-	@echo $(SRC)
 
 $(BINS): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
