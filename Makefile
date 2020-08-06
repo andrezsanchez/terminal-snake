@@ -1,9 +1,9 @@
 CC = clang
 
 LDFLAGS = -lncurses
-CFLAGS = -std=c18 -Wall -Ideps -g
+CFLAGS = -std=c18 -Wall -Iinclude -g
 
-SRC = $(wildcard src/*.c) $(wildcard deps/*/*.c)
+SRC = $(wildcard src/*.c) $(wildcard include/*/*.c)
 
 OBJS = $(SRC:.c=.o)
 
