@@ -130,7 +130,7 @@ void fill_background(const vec2i screen_size) {
   attroff(COLOR_PAIR(WALL_COLOR));
 }
 
-#define SCORE_MESSAGE_SIZE 30
+#define SCORE_MESSAGE_SIZE 15
 void draw_score(const game_t game) {
   char message[SCORE_MESSAGE_SIZE] = {0};
   snprintf(message, SCORE_MESSAGE_SIZE, "Score: %d", game.score);
