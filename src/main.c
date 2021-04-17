@@ -1,14 +1,10 @@
-#include <stdlib.h>
-#include <stdio.h>
-#include <curses.h>
-#include <signal.h>
-#include <time.h>
-#include <unistd.h>
-#include <stdbool.h>
-#include "list/list.h"
-#include "vec.h"
-#include "game.h"
-#include "snake.h"
+#include "main.h"
+
+#undef ns
+#define ns(x) FLATBUFFERS_WRAP_NAMESPACE(Snake_Message, x)
+
+// A helper to simplify creating vectors from C-arrays.
+#define c_vec_len(V) (sizeof(V)/sizeof((V)[0]))
 
 static void finish(int sig);
 static void screen_size_changed();
@@ -18,6 +14,10 @@ const int KEY_ESC = 27;
 const int SNAKE_COLOR = 1;
 const int APPLE_COLOR = 2;
 const int WALL_COLOR = 3;
+
+struct conn_t {
+  int fd;
+};
 
 vec2i screen_offset(const vec2i screen_size) {
   return (vec2i) {
@@ -102,6 +102,24 @@ bool is_left(int c) {
   }
 }
 
+uint8_t get_direction_uint8(vec2i dir_v) {
+  if (dir_v.y == -1) {
+    return 0;
+  }
+  if (dir_v.y == 1) {
+    return 2;
+  }
+  if (dir_v.x == 1) {
+    return 1;
+  }
+
+  if (dir_v.x == -1) {
+    return 3;
+  }
+
+  return 5;
+}
+
 vec2i get_direction(int ch) {
   if (ch != ERR) {
     if (ch == KEY_ESC) finish(0);
@@ -130,13 +148,23 @@ void fill_background(const vec2i screen_size) {
   attroff(COLOR_PAIR(WALL_COLOR));
 }
 
+void draw_text_center(
+  const vec2i position,
+  const char * text,
+  size_t text_len
+) {
+  mvwaddstr(stdscr, position.y, position.x - (text_len / 2), text);
+}
+
 #define SCORE_MESSAGE_SIZE 15
-void draw_score(const game_t game) {
+void draw_score(const game_t game, const vec2i position) {
   char message[SCORE_MESSAGE_SIZE] = {0};
   snprintf(message, SCORE_MESSAGE_SIZE, "Score: %d", game.score);
-  attron(COLOR_PAIR(WALL_COLOR));
-  mvwaddstr(stdscr, 1, 1, message);
-  attroff(COLOR_PAIR(WALL_COLOR));
+
+  size_t len = strnlen(message, SCORE_MESSAGE_SIZE);
+
+  draw_text_center(position, message, len);
+  /*mvwaddstr(stdscr, 1, 1, message);*/
 }
 
 const char YOU_LOSE_STRING[] = "You have failed your prerogative as a snake. Shame be upon you and your children.";
@@ -145,25 +173,35 @@ void draw_screen(game_t game, vec2i screen_size) {
   // Clear the screen.
   erase();
 
+  // Fill the out-of-bounds part of the screen.
+  fill_background(screen_size);
+
   // Write the you lose string if we're on the end screen.
   if (game.end_screen) {
-    const int x = (screen_size.x / 2) - (sizeof(YOU_LOSE_STRING) / 2);
-    const int y = screen_size.y / 2;
-    mvwaddstr(stdscr, y, x, YOU_LOSE_STRING);
+    attron(COLOR_PAIR(APPLE_COLOR));
+    draw_text_center(
+      (vec2i) {
+        (screen_size.x / 2),
+        screen_size.y / 2
+      },
+      YOU_LOSE_STRING,
+      sizeof(YOU_LOSE_STRING)
+    );
+    draw_score(game, (vec2i) { (screen_size.x / 2), (screen_size.y / 2) + 1 });
+    attroff(COLOR_PAIR(APPLE_COLOR));
   }
   // Otherwise draw the game.
   else {
-    // Fill the out-of-bounds part of the screen.
-    fill_background(screen_size);
-
-    draw_score(game);
-
-    // Draw the snake.
-    draw_snake(game.snake, screen_size);
-
-    // Draw the apple.
-    draw_block(&game.apple, screen_offset(screen_size), APPLE_COLOR);
+    attron(COLOR_PAIR(WALL_COLOR));
+    draw_score(game, (vec2i) { screen_size.x / 2, 1 });
+    attroff(COLOR_PAIR(WALL_COLOR));
   }
+
+  // Draw the snake.
+  draw_snake(game.snake, screen_size);
+
+  // Draw the apple.
+  draw_block(&game.apple, screen_offset(screen_size), APPLE_COLOR);
 
   // Copy the new contents to the screen.
   refresh();
@@ -181,12 +219,58 @@ void init_ncurses() {
   // Initialize ncurses colors.
   start_color();
   init_pair(WALL_COLOR, COLOR_BLACK, COLOR_WHITE);
-  init_pair(APPLE_COLOR, COLOR_RED, COLOR_RED);
+  init_pair(APPLE_COLOR, COLOR_BLACK, COLOR_RED);
   init_pair(SNAKE_COLOR, COLOR_YELLOW, COLOR_YELLOW);
 }
 
 void update_screen_size(vec2i * screen_size) {
   getmaxyx(stdscr, screen_size->y, screen_size->x);
+}
+
+int conn_open(const char * host, const char * port) {
+  struct addrinfo * addr = NULL;
+  int sock = -1;
+
+  {
+    int result = getaddrinfo(host, port, NULL, &addr);
+    checkio(result == 0, "getaddrinfo error: %s", gai_strerror(result));
+  }
+
+  sock = socket(AF_INET, SOCK_STREAM, 0);
+  checkio(sock >= 0, "could not open socket");
+
+  int rv = connect(sock, addr->ai_addr, addr->ai_addrlen);
+  checkio(rv == 0, "could not connect");
+
+  freeaddrinfo(addr);
+  return sock;
+error:
+  if (addr) freeaddrinfo(addr);
+  if (sock > 0) close(sock);
+  return -1;
+}
+
+int ending = 0;
+
+void * input_handler(void * conn_pointer) {
+  struct conn_t * conn = (struct conn_t *) conn_pointer;
+  while (!ending) {
+    // Prevent the input from going too fast.
+    wait_please();
+
+    const vec2i direction = get_direction(getch());
+    const uint8_t dir = get_direction_uint8(direction);
+    if (dir != 5) {
+      write(conn->fd, &dir, 1);
+    }
+  }
+  return NULL;
+}
+
+vec2i direction_from_byte(uint8_t ch) {
+  int x = (ch == 1) - (ch == 3);
+  int y = (ch == 2) - (ch == 0);
+  return (vec2i) { x, y };
 }
 
 int main(int argc, char **argv) {
@@ -207,33 +291,71 @@ int main(int argc, char **argv) {
   game_t game = {0};
   game_init(&game);
 
-  for (;;) {
-    // Prevent the game from going too fast.
-    wait_please();
+  const char host[] = "127.0.0.1";
+  const char port[] = "8080";
+  int sock = conn_open(host, port);
+  check(sock > -1, "Failed to connect");
+
+  struct conn_t * arg = malloc(sizeof(struct conn_t));
+  checkio(arg != NULL, "malloc failure");
+  arg->fd = sock;
+
+  pthread_t input_thread;
+  check(
+    pthread_create(&input_thread, NULL, input_handler, (void *) arg) == 0,
+    "Could not create thread"
+  );
+
+  while (true) {
+    uint8_t buf[1] = {0};
+    uint8_t * cur = buf;
+
+    int read_len = read(sock, buf, sizeof(buf));
+    checkio(read_len > -1, "read error");
+
+    vec2i direction = direction_from_byte(buf[0]);
+    int random_value = rand() % (GAME_SIZE * GAME_SIZE);
+    game_apply_direction(&game, direction, random_value);
 
     // If we're on the end screen.
     if (game.end_screen) {
-      int ch = getch();
-      if (ch != ERR) {
-        if (ch == 'q') {
-          finish(0);
-        }
-        else {
-          game_init(&game);
-        }
-      }
+      /*int ch = getch();*/
+      /*if (ch != ERR) {*/
+        /*if (ch == 'q') {*/
+          /*finish(0);*/
+        /*}*/
+        /*else {*/
+          /*game_init(&game);*/
+        /*}*/
+      /*}*/
     }
     // Otherwise apply the direction and let the game code take care of what to do.
     else {
-      const vec2i direction = get_direction(getch());
-      game_apply_direction(&game, direction);
+      /*const vec2i direction = get_direction(getch());*/
+      /*const uint8_t dir = get_direction_uint8(direction);*/
+      /*if (dir != 5) {*/
+        /*write(sock, &dir, 1);*/
+      /*}*/
+      /*game_apply_direction(&game, direction);*/
     }
 
     update_screen_size(&screen_size);
     draw_screen(game, screen_size);
   }
 
+  pthread_join(input_thread, NULL);
+
+  if (sock > -1) close(sock);
+  sock = -1;
   finish(0);
+
+  return 0;
+error:
+  if (sock > -1) close(sock);
+  finish(0);
+  sock = -1;
+
+  return 1;
 }
 
 static void finish(int sig) {

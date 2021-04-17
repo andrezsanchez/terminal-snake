@@ -46,15 +46,29 @@ void game_destroy(game_t * game) {
   *game = (game_t) {0};
 }
 
-void game_reset_apple(game_t * game) {
+void game_set_apple(game_t * game, const vec2i position) {
   if (!game) {
     return;
   }
 
   do {
-    game->apple.x = rand() % 30;
-    game->apple.y = rand() % 30;
+    game->apple.x = rand() % GAME_SIZE;
+    game->apple.y = rand() % GAME_SIZE;
   } while (block_snake_collision(game->apple, game->snake));
+}
+
+vec2i game_generate_random_apple_position(game_t * game) {
+  vec2i apple = { -1, -1 };
+
+  if (!game) {
+    return apple;
+  }
+
+  do {
+    apple = (vec2i) { rand() % GAME_SIZE, rand() % GAME_SIZE };
+  } while (block_snake_collision(apple, game->snake));
+
+  return apple;
 }
 
 void next_direction(
@@ -86,7 +100,33 @@ bool in_bounds(const vec2i position, const vec2i bounds) {
   return true;
 }
 
-void game_apply_direction(game_t * game, vec2i direction) {
+vec2i new_apple_position(
+  game_t * game,
+  const int random_value
+) {
+  if (!game) {
+    return (vec2i) { -1, -1 };
+  }
+
+  int max_iterations = GAME_SIZE * GAME_SIZE;
+  vec2i position = {0};
+  for (int i = 0; i < max_iterations; i += 1) {
+    int index = (random_value + i) % (GAME_SIZE * GAME_SIZE);
+    position = (vec2i) { index % GAME_SIZE, index / GAME_SIZE };
+
+    if (!block_snake_collision(position, game->snake)) {
+      break;
+    }
+  }
+
+  return position;
+}
+
+void game_apply_direction(
+  game_t * game,
+  const vec2i direction,
+  const int random_value
+) {
   if (!game) {
     return;
   }
@@ -106,7 +146,7 @@ void game_apply_direction(game_t * game, vec2i direction) {
   if (block_snake_collision(game->apple, game->snake)) {
     snake_add_head(game->snake, game->direction);
     game->position = snake_head(game->snake);
-    game_reset_apple(game);
+    game_set_apple(game, new_apple_position(game, random_value));
     game->score += 1;
   }
   // If the snake has not, move normally.

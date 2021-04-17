@@ -3,6 +3,8 @@
 #include "vec.h"
 #include "snake.h"
 
+//enum Something { A, B };
+
 /**
  * The game object. All of the game state is encapsulated in this object.
  */
@@ -18,5 +20,9 @@ typedef struct {
 void game_init(game_t * game);
 void game_end(game_t * game);
 void game_destroy(game_t * game);
-void game_reset_apple(game_t *game);
-void game_apply_direction(game_t * game, vec2i direction);
+void game_set_apple(game_t * game, const vec2i position);
+void game_apply_direction(
+  game_t * game,
+  const vec2i direction,
+  const int random_value
+);

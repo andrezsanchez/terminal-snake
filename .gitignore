@@ -1,3 +1,6 @@
 main
+server
 a.out
 *.o
+include/flatcc
+lib/flatcc

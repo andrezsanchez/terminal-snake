@@ -1,0 +1,12 @@
+namespace Snake.Message;
+
+enum Direction: byte {
+  Up,
+  Right,
+  Left,
+  Down,
+}
+
+table Command {
+  direction: Direction;
+}
