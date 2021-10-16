@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stdio.h>
 #include "list/list.h"
 #include "vec.h"
 #include "snake.h"
@@ -26,3 +27,5 @@ void game_apply_direction(
   const vec2i direction,
   const int random_value
 );
+
+void game_print(game_t * game, FILE * stream);

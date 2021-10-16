@@ -17,6 +17,7 @@ const int WALL_COLOR = 3;
 
 struct conn_t {
   int fd;
+  game_t * game;
 };
 
 vec2i screen_offset(const vec2i screen_size) {
@@ -258,10 +259,19 @@ void * input_handler(void * conn_pointer) {
     // Prevent the input from going too fast.
     wait_please();
 
-    const vec2i direction = get_direction(getch());
-    const uint8_t dir = get_direction_uint8(direction);
-    if (dir != 5) {
-      write(conn->fd, &dir, 1);
+    const int ch = getch();
+    if (
+      (ch != ERR && ch == 'q') ||
+      (conn->game->end_screen && ch == 'q')
+    ) {
+      const uint8_t reset = 255;
+      write(conn->fd, &reset, 1);
+    } else if (!conn->game->end_screen) {
+      const vec2i direction = get_direction(ch);
+      const uint8_t dir = get_direction_uint8(direction);
+      if (dir != 5) {
+        write(conn->fd, &dir, 1);
+      }
     }
   }
   return NULL;
@@ -291,6 +301,7 @@ int main(int argc, char **argv) {
   game_t game = {0};
   game_init(&game);
 
+  // Connect to the server.
   const char host[] = "127.0.0.1";
   const char port[] = "8080";
   int sock = conn_open(host, port);
@@ -299,12 +310,15 @@ int main(int argc, char **argv) {
   struct conn_t * arg = malloc(sizeof(struct conn_t));
   checkio(arg != NULL, "malloc failure");
   arg->fd = sock;
+  arg->game = &game;
 
   pthread_t input_thread;
   check(
     pthread_create(&input_thread, NULL, input_handler, (void *) arg) == 0,
     "Could not create thread"
   );
+
+  srand(0);
 
   while (true) {
     uint8_t buf[1] = {0};
@@ -313,30 +327,12 @@ int main(int argc, char **argv) {
     int read_len = read(sock, buf, sizeof(buf));
     checkio(read_len > -1, "read error");
 
-    vec2i direction = direction_from_byte(buf[0]);
-    int random_value = rand() % (GAME_SIZE * GAME_SIZE);
-    game_apply_direction(&game, direction, random_value);
-
-    // If we're on the end screen.
-    if (game.end_screen) {
-      /*int ch = getch();*/
-      /*if (ch != ERR) {*/
-        /*if (ch == 'q') {*/
-          /*finish(0);*/
-        /*}*/
-        /*else {*/
-          /*game_init(&game);*/
-        /*}*/
-      /*}*/
-    }
-    // Otherwise apply the direction and let the game code take care of what to do.
-    else {
-      /*const vec2i direction = get_direction(getch());*/
-      /*const uint8_t dir = get_direction_uint8(direction);*/
-      /*if (dir != 5) {*/
-        /*write(sock, &dir, 1);*/
-      /*}*/
-      /*game_apply_direction(&game, direction);*/
+    if (buf[0] == 255) {
+      game_init(&game);
+    } else {
+      vec2i direction = direction_from_byte(buf[0]);
+      int random_value = rand() % (GAME_SIZE * GAME_SIZE);
+      game_apply_direction(&game, direction, random_value);
     }
 
     update_screen_size(&screen_size);

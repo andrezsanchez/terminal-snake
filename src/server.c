@@ -18,10 +18,16 @@ static void wait_please() {
   nanosleep(&t, NULL);
 }
 
-uint8_t direction = 0;
+// uint8_t direction = 0;
 
 // global to signal each thread to end
 int ending = 0;
+
+vec2i get_direction(int ch) {
+  int x = (ch == 1) - (ch == 3);
+  int y = (ch == 2) - (ch == 0);
+  return (vec2i) { x, y };
+}
 
 void * connection_handler(void * conn_pointer) {
   struct conn_t * conn = (struct conn_t *) conn_pointer;
@@ -36,15 +42,41 @@ void * connection_handler(void * conn_pointer) {
   /*while (true) {*/
   /*printf("Handling connection\n");*/
 
+  game_t game = {0};
+  game_init(&game);
+  game_print(&game, stdout);
+
+  srand(0);
+  uint8_t direction = 0;
+
+  int t = 0;
   while (!ending) {
     int read_len = read(sock, buf, sizeof(buf));
     checkio(read_len > -1, "read error");
     /*printf("Received %d bytes\n", read_len);*/
 
+    direction = buf[0];
+    printf("d(%d)\n", direction);
+    // uint8_t dir = direction;
+    
+    if (game.end_screen && direction == 255) {
+      game_init(&game);
+      game_print(&game, stdout);
+      t = 0;
+    } else {
+      game_apply_direction(&game, get_direction(direction % 4), rand());
+      game_print(&game, stdout);
+      t += 1;
+    }
 
-    direction = buf[0] % 4;
-    printf("set d=%d\n", direction);
+    write(sock, &direction, 1);
+
+    // Prevent the game from going too fast.
+    wait_please();
   }
+
+  // while (!ending) {
+  // }
 
   /*uint16_t * len;*/
   /*// TODO: Make sure we read enough bytes to even do this.*/
@@ -63,12 +95,6 @@ error:
   return NULL;
 }
 
-vec2i get_direction(int ch) {
-  int x = (ch == 1) - (ch == 3);
-  int y = (ch == 2) - (ch == 0);
-  return (vec2i) { x, y };
-}
-
 static void finish(int sig) {
   ending = 1;
 }
@@ -76,7 +102,7 @@ static void finish(int sig) {
 int main() {
   signal(SIGTERM, finish);
 
-  const int port = 8080;
+  const uint16_t port = 8080;
 
   int serversock = socket(AF_INET, SOCK_STREAM, 0);
   checkio(serversock > -1, "could not open socket");
@@ -96,48 +122,32 @@ int main() {
 
   checkio(listen(serversock, 3) > -1, "listen error");
 
-  struct sockaddr_in client;
-  int sl = sizeof(struct sockaddr_in);
-
-  game_t game = {0};
-  game_init(&game);
-
-  int client_sock = accept(serversock, (struct sockaddr *) &client, (socklen_t *) &sl);
-  checkio(client_sock > -1, "accept error");
-
-  pthread_t t_id;
-
-  struct conn_t * arg = malloc(sizeof(struct conn_t));
-  checkio(arg != NULL, "malloc failure");
-
-  arg->fd = client_sock;
-
-  check(
-    pthread_create(&t_id, NULL, connection_handler, (void *) arg) == 0,
-    "pthread_create error"
-  );
-
-  int t = 0;
   while (!ending) {
-    uint8_t dir = direction;
-    if (!game.end_screen) {
-      game_apply_direction(&game, get_direction(dir));
-    }
+    struct sockaddr_in client;
+    int sl = sizeof(struct sockaddr_in);
 
-    t += 1;
+    int client_sock = accept(serversock, (struct sockaddr *) &client, (socklen_t *) &sl);
+    checkio(client_sock > -1, "accept error");
 
-    write(client_sock, &dir, 1);
+    pthread_t t_id;
 
-    // Prevent the game from going too fast.
-    wait_please();
+    struct conn_t * arg = malloc(sizeof(struct conn_t));
+    checkio(arg != NULL, "malloc failure");
+
+    arg->fd = client_sock;
+
+    check(
+      pthread_create(&t_id, NULL, connection_handler, (void *) arg) == 0,
+      "pthread_create error"
+    );
+
+    check(pthread_join(t_id, NULL) > -1, "Failed to join");
   }
 
   if (serversock > -1) {
     close(serversock);
   }
   serversock = -1;
-
-  check(pthread_join(t_id, NULL) > -1, "Failed to join");
 
   pthread_exit(NULL);
   return 0;

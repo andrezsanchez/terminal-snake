@@ -16,6 +16,7 @@ void game_init(game_t * game) {
   game->snake->free = free;
   game->end_screen = false;
   game->apple = (vec2i) { 0, 1 };
+  game->score = 0;
   for (int i = 0; i < 5; i += 1) {
     list_rpush(
       game->snake,
@@ -143,7 +144,10 @@ void game_apply_direction(
   }
 
   // Check if the snake has collided with the apple.
-  if (block_snake_collision(game->apple, game->snake)) {
+  if (
+    vec2i_equals(game->apple, candidatePosition) ||
+    block_snake_collision(game->apple, game->snake)
+  ) {
     snake_add_head(game->snake, game->direction);
     game->position = snake_head(game->snake);
     game_set_apple(game, new_apple_position(game, random_value));
@@ -154,4 +158,14 @@ void game_apply_direction(
     snake_move(game->snake, game->direction);
     game->position = snake_head(game->snake);
   }
+}
+
+void game_print(game_t * game, FILE * stream) {
+  fprintf(stream, "game_t {\n");
+  fprintf(stream, "  position: { x: %d, y: %d },\n", game->position.x, game->position.y);
+  fprintf(stream, "  direction: { x: %d, y: %d },\n", game->direction.x, game->direction.y);
+  fprintf(stream, "  apple: { x: %d, y: %d },\n", game->apple.x, game->apple.y);
+  fprintf(stream, "  end_screen: %d,\n", game->end_screen);
+  fprintf(stream, "  score: %d,\n", game->score);
+  fprintf(stream, "} // game_t\n");
 }
