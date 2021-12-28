@@ -8,13 +8,19 @@
 
 struct conn_t {
   int fd;
+  uint8_t * direction;
+};
+
+struct game_context_t {
+  int fd;
+  uint8_t * direction;
+  bool ending;
 };
 
 struct timespec t;
 static void wait_please() {
   t.tv_sec = 0;
   t.tv_nsec = 50000000L;
-  /*t.tv_nsec = 100000000L;*/
   nanosleep(&t, NULL);
 }
 
@@ -29,6 +35,53 @@ vec2i get_direction(int ch) {
   return (vec2i) { x, y };
 }
 
+void * game_handler(void * game_context_ptr) {
+  struct game_context_t * game_context = (struct game_context_t *) game_context_ptr;
+  int sock = game_context->fd;
+
+  printf("Game handler\n");
+
+  game_t game = {0};
+  game_init(&game);
+  game_print(&game, stdout);
+
+  srand(0);
+
+  while (!game_context->ending) {
+    u_int8_t direction = *game_context->direction;
+
+    switch (direction) {
+      case 255: {
+        *game_context->direction = 254;
+        printf("restart\n");
+
+        game_init(&game);
+        break;
+      }
+      default: {
+        vec2i direction_v = {0,0};
+        if (direction != 254) {
+          printf("d(%u)\n", direction);
+          direction_v = get_direction(direction % 4);
+        }
+
+        *game_context->direction = 254;
+
+        game_apply_direction(&game, direction_v, rand());
+        break;
+      }
+    }
+
+    write(sock, &direction, 1);
+
+    wait_please();
+  }
+
+  printf("Game handler close\n");
+
+  return NULL;
+}
+
 void * connection_handler(void * conn_pointer) {
   struct conn_t * conn = (struct conn_t *) conn_pointer;
   int sock = conn->fd;
@@ -40,43 +93,27 @@ void * connection_handler(void * conn_pointer) {
   /*checkio(rlen > -1, "read error");*/
 
   /*while (true) {*/
-  /*printf("Handling connection\n");*/
+  printf("Connection handler\n");
 
-  game_t game = {0};
-  game_init(&game);
-  game_print(&game, stdout);
-
-  srand(0);
-  uint8_t direction = 0;
-
-  int t = 0;
   while (!ending) {
     int read_len = read(sock, buf, sizeof(buf));
-    checkio(read_len > -1, "read error");
-    /*printf("Received %d bytes\n", read_len);*/
+    checkio(read_len != -1, "read error");
 
-    direction = buf[0];
-    printf("d(%d)\n", direction);
-    // uint8_t dir = direction;
-    
-    if (game.end_screen && direction == 255) {
-      game_init(&game);
-      game_print(&game, stdout);
-      t = 0;
-    } else {
-      game_apply_direction(&game, get_direction(direction % 4), rand());
-      game_print(&game, stdout);
-      t += 1;
+    // 0 means the connection is closed
+    if (read_len == 0) {
+      break;
     }
 
-    write(sock, &direction, 1);
+    if (read_len > 1) {
+      printf("read_len > 1 wtf");
+      ending = true;
+    }
 
-    // Prevent the game from going too fast.
-    wait_please();
+    for (int i = 0; i < read_len; i += 1) {
+      // uint8_t direction = buf[0];
+      *conn->direction = buf[i];
+    }
   }
-
-  // while (!ending) {
-  // }
 
   /*uint16_t * len;*/
   /*// TODO: Make sure we read enough bytes to even do this.*/
@@ -84,12 +121,11 @@ void * connection_handler(void * conn_pointer) {
 
   /*printf("Next message should be %d bytes\n", *len);*/
 
-  /*printf("Exiting thread\n");*/
-
-  /*pthread_exit(NULL);*/
+  printf("Connection handler close\n");
   return NULL;
 
 error:
+  printf("Connection handler close\n");
   if (sock > -1) close(sock);
   pthread_exit(NULL);
   return NULL;
@@ -129,19 +165,40 @@ int main() {
     int client_sock = accept(serversock, (struct sockaddr *) &client, (socklen_t *) &sl);
     checkio(client_sock > -1, "accept error");
 
-    pthread_t t_id;
+    uint8_t * direction = malloc(sizeof(uint8_t));
+    *direction = 0;
 
-    struct conn_t * arg = malloc(sizeof(struct conn_t));
-    checkio(arg != NULL, "malloc failure");
+    // Create connection handler thread.
 
-    arg->fd = client_sock;
+    pthread_t connection_handler_thread;
+    struct conn_t * connection_context = malloc(sizeof(struct conn_t));
+    checkio(connection_context != NULL, "malloc failure");
 
+    connection_context->fd = client_sock;
+    connection_context->direction = direction;
     check(
-      pthread_create(&t_id, NULL, connection_handler, (void *) arg) == 0,
+      pthread_create(&connection_handler_thread, NULL, connection_handler, (void *) connection_context) == 0,
       "pthread_create error"
     );
 
-    check(pthread_join(t_id, NULL) > -1, "Failed to join");
+    // Create game handler thread.
+
+    pthread_t game_handler_thread;
+    struct game_context_t * game_context = malloc(sizeof(struct game_context_t));
+    checkio(game_context != NULL, "malloc failure");
+    game_context->fd = client_sock;
+    game_context->direction = direction;
+    check(
+      pthread_create(&game_handler_thread, NULL, game_handler, (void *) game_context) == 0,
+      "pthread_create error"
+    );
+
+    // Join threads.
+
+    check(pthread_join(connection_handler_thread, NULL) > -1, "Failed to join");
+    game_context->ending = true;
+
+    check(pthread_join(game_handler_thread, NULL) > -1, "Failed to join");
   }
 
   if (serversock > -1) {

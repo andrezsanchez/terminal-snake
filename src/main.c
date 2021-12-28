@@ -15,9 +15,9 @@ const int SNAKE_COLOR = 1;
 const int APPLE_COLOR = 2;
 const int WALL_COLOR = 3;
 
-struct conn_t {
+struct listener_context_t {
   int fd;
-  game_t * game;
+  uint8_t command;
 };
 
 vec2i screen_offset(const vec2i screen_size) {
@@ -50,13 +50,6 @@ void draw_snake(list_t * snake, const vec2i screen_size) {
   }
 
   list_iterator_destroy(it);
-}
-
-struct timespec t;
-static void wait_please() {
-  t.tv_sec = 0;
-  t.tv_nsec = 50000000L;
-  nanosleep(&t, NULL);
 }
 
 bool is_right(int c) {
@@ -107,9 +100,11 @@ uint8_t get_direction_uint8(vec2i dir_v) {
   if (dir_v.y == -1) {
     return 0;
   }
+
   if (dir_v.y == 1) {
     return 2;
   }
+
   if (dir_v.x == 1) {
     return 1;
   }
@@ -177,6 +172,12 @@ void draw_screen(game_t game, vec2i screen_size) {
   // Fill the out-of-bounds part of the screen.
   fill_background(screen_size);
 
+  // Draw the snake.
+  draw_snake(game.snake, screen_size);
+
+  // Draw the apple.
+  draw_block(&game.apple, screen_offset(screen_size), APPLE_COLOR);
+
   // Write the you lose string if we're on the end screen.
   if (game.end_screen) {
     attron(COLOR_PAIR(APPLE_COLOR));
@@ -198,20 +199,21 @@ void draw_screen(game_t game, vec2i screen_size) {
     attroff(COLOR_PAIR(WALL_COLOR));
   }
 
-  // Draw the snake.
-  draw_snake(game.snake, screen_size);
-
-  // Draw the apple.
-  draw_block(&game.apple, screen_offset(screen_size), APPLE_COLOR);
-
   // Copy the new contents to the screen.
   refresh();
 }
 
 void init_ncurses() {
   initscr();
+
+  // Allows arrow keys to be used as input.
   keypad(stdscr, TRUE);
+
   nonl();
+
+  // The cbreak routine disables line buffering and erase/kill character-processing (interrupt and
+  // flow control characters are unaffected), making characters typed by the user immediately
+  // available to the program
   cbreak();
 
   // Do not "echo" what the user types onto the screen.
@@ -219,6 +221,13 @@ void init_ncurses() {
 
   // Initialize ncurses colors.
   start_color();
+
+  // Causes `getch` to be a non-blocking call. If no input is ready `getch` will return `ERR`.
+  nodelay(stdscr, true);
+
+  // Hide the cursor.
+  curs_set(0);
+
   init_pair(WALL_COLOR, COLOR_BLACK, COLOR_WHITE);
   init_pair(APPLE_COLOR, COLOR_BLACK, COLOR_RED);
   init_pair(SNAKE_COLOR, COLOR_YELLOW, COLOR_YELLOW);
@@ -253,34 +262,37 @@ error:
 
 int ending = 0;
 
-void * input_handler(void * conn_pointer) {
-  struct conn_t * conn = (struct conn_t *) conn_pointer;
-  while (!ending) {
-    // Prevent the input from going too fast.
-    wait_please();
-
-    const int ch = getch();
-    if (
-      (ch != ERR && ch == 'q') ||
-      (conn->game->end_screen && ch == 'q')
-    ) {
-      const uint8_t reset = 255;
-      write(conn->fd, &reset, 1);
-    } else if (!conn->game->end_screen) {
-      const vec2i direction = get_direction(ch);
-      const uint8_t dir = get_direction_uint8(direction);
-      if (dir != 5) {
-        write(conn->fd, &dir, 1);
-      }
-    }
-  }
-  return NULL;
-}
-
 vec2i direction_from_byte(uint8_t ch) {
   int x = (ch == 1) - (ch == 3);
   int y = (ch == 2) - (ch == 0);
   return (vec2i) { x, y };
+}
+
+void * listener(void * conn_pointer) {
+  struct listener_context_t * listener_context = (struct listener_context_t *) conn_pointer;
+
+  uint8_t buf[1024] = {0};
+  while (!ending) {
+
+    int read_len = read(listener_context->fd, buf, sizeof(buf));
+    checkio(read_len > -1, "read error");
+
+    if (read_len == 0) {
+      continue;
+    }
+
+    if (read_len > 1) {
+      ending = true;
+      break;
+    }
+
+    listener_context->command = buf[0];
+  }
+
+  return NULL;
+error:
+  ending = true;
+  return NULL;
 }
 
 int main(int argc, char **argv) {
@@ -294,10 +306,6 @@ int main(int argc, char **argv) {
   // Get the screen size.
   update_screen_size(&screen_size);
 
-  // Hide the cursor.
-  curs_set(0); 
-
-  nodelay(stdscr, true);
   game_t game = {0};
   game_init(&game);
 
@@ -307,39 +315,65 @@ int main(int argc, char **argv) {
   int sock = conn_open(host, port);
   check(sock > -1, "Failed to connect");
 
-  struct conn_t * arg = malloc(sizeof(struct conn_t));
-  checkio(arg != NULL, "malloc failure");
-  arg->fd = sock;
-  arg->game = &game;
+  struct listener_context_t * listener_context = malloc(sizeof(struct listener_context_t));
+  checkio(listener_context != NULL, "malloc failure");
+  listener_context->command = 254;
+  listener_context->fd = sock;
 
-  pthread_t input_thread;
+  pthread_t listener_thread;
   check(
-    pthread_create(&input_thread, NULL, input_handler, (void *) arg) == 0,
+    pthread_create(&listener_thread, NULL, listener, (void *) listener_context) == 0,
     "Could not create thread"
   );
 
   srand(0);
 
-  while (true) {
-    uint8_t buf[1] = {0};
-    uint8_t * cur = buf;
-
-    int read_len = read(sock, buf, sizeof(buf));
-    checkio(read_len > -1, "read error");
-
-    if (buf[0] == 255) {
-      game_init(&game);
-    } else {
-      vec2i direction = direction_from_byte(buf[0]);
-      int random_value = rand() % (GAME_SIZE * GAME_SIZE);
-      game_apply_direction(&game, direction, random_value);
+  int i = 0;
+  bool dirty = true;
+  while (!ending) {
+    uint8_t command = listener_context->command;
+    listener_context->command = 253;
+    if (command != 253) {
+      if (command == 255) {
+        game_init(&game);
+      } else {
+        vec2i direction = direction_from_byte(command);
+        int random_value = rand() % (GAME_SIZE * GAME_SIZE);
+        game_apply_direction(&game, direction, random_value);
+      }
+      dirty = true;
     }
 
-    update_screen_size(&screen_size);
-    draw_screen(game, screen_size);
+    const int input = getch();
+    if (
+      (input != ERR && input == 'q') ||
+      (game.end_screen && input == 'q')
+    ) {
+      const uint8_t reset = 255;
+      checkio(
+        write(sock, &reset, 1) > -1,
+        "Could not write"
+      );
+    } else if (!game.end_screen) {
+      const vec2i direction = get_direction(input);
+      const uint8_t dir = get_direction_uint8(direction);
+      if (dir != 5) {
+        checkio(
+          write(sock, &dir, 1) > -1,
+          "Could not write"
+        );
+      }
+    }
+
+    if (dirty) {
+      update_screen_size(&screen_size);
+      draw_screen(game, screen_size);
+      dirty = false;
+    }
+    i += 1;
   }
 
-  pthread_join(input_thread, NULL);
+  pthread_join(listener_thread, NULL);
 
   if (sock > -1) close(sock);
   sock = -1;

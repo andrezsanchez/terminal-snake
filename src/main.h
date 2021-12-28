@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <curses.h>
 #include <signal.h>
-#include <time.h>
 #include <unistd.h>
 #include <stdbool.h>
 #include <pthread.h>
