@@ -19,6 +19,9 @@ This has only been tested on my Macbook Pro.
 
 Run the server by running `./server`, then in another terminal, run `./main`
 
+Control the snake using arrow keys, WASD keys, or HJKL keys (a la Vim).
+
+Exit the game using Ctrl-C.
 
 ## Demo
 
