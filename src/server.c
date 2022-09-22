@@ -1,8 +1,5 @@
 #include "server.h"
 
-#undef ns
-#define ns(x) FLATBUFFERS_WRAP_NAMESPACE(Snake_Message, x)
-
 // A helper to simplify creating vectors from C-arrays.
 #define c_vec_len(V) (sizeof(V)/sizeof((V)[0]))
 
@@ -87,7 +84,7 @@ void * connection_handler(void * conn_pointer) {
   int sock = conn->fd;
 
   uint8_t buf[1] = {0};
-  uint8_t * cur = buf;
+  /*uint8_t * cur = buf;*/
 
   /*int rlen = read(sock, buf, sizeof(buf));*/
   /*checkio(rlen > -1, "read error");*/

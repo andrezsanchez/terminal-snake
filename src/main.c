@@ -1,7 +1,7 @@
 #include "main.h"
 
-#undef ns
-#define ns(x) FLATBUFFERS_WRAP_NAMESPACE(Snake_Message, x)
+/*#undef ns*/
+/*#define ns(x) FLATBUFFERS_WRAP_NAMESPACE(Snake_Message, x)*/
 
 // A helper to simplify creating vectors from C-arrays.
 #define c_vec_len(V) (sizeof(V)/sizeof((V)[0]))
@@ -328,7 +328,6 @@ int main(int argc, char **argv) {
 
   srand(0);
 
-  int i = 0;
   bool dirty = true;
   while (!ending) {
     uint8_t command = listener_context->command;
@@ -370,7 +369,6 @@ int main(int argc, char **argv) {
       draw_screen(game, screen_size);
       dirty = false;
     }
-    i += 1;
   }
 
   pthread_join(listener_thread, NULL);

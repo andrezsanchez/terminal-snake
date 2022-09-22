@@ -1,7 +1,4 @@
 #include <errno.h>
-#include <sys/types.h>
-#include <sys/socket.h> // socket
-#include <netdb.h>
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <unistd.h> // close
@@ -19,5 +16,9 @@
 #include "game.h"
 #include "snake.h"
 
-#include "flatcc/flatcc_builder.h"
-#include "flatbuffers/snake_builder.h"
+#include <sys/types.h>
+#include <sys/socket.h> // socket
+#include <netdb.h>
+
+//#include "flatcc/flatcc_builder.h"
+//#include "flatbuffers/snake_builder.h"

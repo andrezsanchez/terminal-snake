@@ -1,14 +1,17 @@
 CC = clang
 FLATCC = ~/code/etc/flatcc/bin/flatcc
 
-LIBS = ncurses pthread flatccrt
+LIBS = c ncurses pthread # flatccrt
 
-LDFLAGS = $(LIBS:%=-l%) -Llib/flatcc
+LDFLAGS = $(LIBS:%=-l%) # -Llib/flatcc
 CFLAGS = -std=c18 -Wall -Iinclude -g
 
 INCLUDE = $(wildcard include/*/*.c)
 INCLUDE_OBJS = $(INCLUDE:.c=.o)
 SRC = $(wildcard src/*.c) $(wildcard include/*/*.c)
+
+DEFINES = _POSIX_C_SOURCE=200809L
+DFLAGS = $(DEFINES:%=-D%)
 
 OBJS = $(SRC:.c=.o)
 
@@ -24,14 +27,14 @@ all: $(BINS)
 
 GAME_OBJS = src/game.o src/snake.o src/vec.o
 main: src/main.o $(GAME_OBJS) $(INCLUDE_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(DFLAGS)
 
 server: src/server.o $(GAME_OBJS) $(INCLUDE_OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS) $(DFLAGS)
 #server: 
 
 %.o: %.c
-	$(CC) $< -c -o $@ $(CFLAGS)
+	$(CC) $< -c -o $@ $(CFLAGS) $(DFLAGS)
 
 #%_builder.h: %.fbs
 

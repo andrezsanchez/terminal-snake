@@ -12,7 +12,5 @@
 
 #include "error.h"
 #include "stream.h"
-#include "flatcc/flatcc_builder.h"
-#include "flatbuffers/snake_builder.h"
 
 #include "game.h"

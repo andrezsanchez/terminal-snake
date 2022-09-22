@@ -1,3 +1,5 @@
+#include <errno.h>
+#include <stdio.h>
 #include <string.h> // strerror_r
 
 #define check(C, S, ...) \
